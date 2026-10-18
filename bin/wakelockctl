@@ -1,0 +1,20 @@
+#!/bin/sh
+# Talk to Wakelock's lease socket.
+#   wakelockctl acquire <id> <ttl-seconds>   take/renew a lease
+#   wakelockctl release <id>
+#   wakelockctl status | list
+SOCK="${WAKELOCK_SOCK:-$HOME/Library/Application Support/Wakelock/sock}"
+
+if [ $# -lt 1 ]; then
+  sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 64
+fi
+if [ ! -S "$SOCK" ]; then
+  echo "wakelockctl: Wakelock is not running ($SOCK not found)" >&2
+  exit 69
+fi
+
+reply="$(printf '%s\n' "$*" | /usr/bin/nc -U -w 3 "$SOCK")" || { echo "wakelockctl: socket error" >&2; exit 74; }
+[ -n "$reply" ] || { echo "wakelockctl: no reply from Wakelock" >&2; exit 74; }
+printf '%s\n' "$reply"
+case "$reply" in err*) exit 1 ;; esac

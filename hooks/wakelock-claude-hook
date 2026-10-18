@@ -1,0 +1,25 @@
+#!/bin/sh
+# Claude Code hook: hold a Wakelock lease while Claude is working.
+#   wakelock-claude-hook acquire   (UserPromptSubmit, PreToolUse — renews before each tool)
+#   wakelock-claude-hook release   (Stop, SessionEnd)
+# One lease per Claude session (id: claude-<session_id>). If Stop never fires
+# (crash, interrupt), the lease simply expires after WAKELOCK_CLAUDE_TTL seconds.
+# Always exits 0 and never writes stdout: UserPromptSubmit stdout would be fed to Claude.
+SOCK="${WAKELOCK_SOCK:-$HOME/Library/Application Support/Wakelock/sock}"
+TTL="${WAKELOCK_CLAUDE_TTL:-7200}"   # must outlast the longest single tool call
+
+input="$(cat)"
+[ -S "$SOCK" ] || exit 0
+
+sid="$(printf '%s' "$input" | tr -d '\n' \
+  | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([A-Za-z0-9._-]\{1,100\}\)".*/\1/p')"
+[ -n "$sid" ] || exit 0   # no stable id -> acquire/release could never pair up
+
+case "$1" in
+  acquire) cmd="acquire claude-$sid $TTL" ;;
+  release) cmd="release claude-$sid" ;;
+  *) exit 0 ;;
+esac
+
+printf '%s\n' "$cmd" | /usr/bin/nc -U -w 2 "$SOCK" >/dev/null 2>&1
+exit 0
