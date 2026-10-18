@@ -25,7 +25,7 @@ echo "Installed CLI helpers to $BIN_DIR"
 
 if [ ! -e /etc/sudoers.d/wakelock ]; then
   echo
-  echo "Next: run scripts/setup-sudoers.sh so Wakelock can keep the Mac awake with the lid closed."
+  echo "Next: click \"Set Up…\" in the Wakelock menu (or run scripts/setup-sudoers.sh) to enable lid-closed mode."
 fi
 
 open "$APP_DEST"

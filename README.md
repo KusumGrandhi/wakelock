@@ -8,8 +8,9 @@ Requires the Xcode Command Line Tools (Swift 5.9+).
 
 ```sh
 scripts/install.sh          # builds, installs /Applications/Wakelock.app + CLI helpers, launches it
-scripts/setup-sudoers.sh    # one-time root setup: sudoers rule for lid-closed + boot-time reset daemon
 ```
+
+Then click **Set Up…** in the menu (or run `scripts/setup-sudoers.sh`). That's one macOS admin prompt — Touch ID or password — which installs the sudoers rule for lid-closed mode and a boot-time reset daemon ([`Support/root-setup.sh`](Support/root-setup.sh)). After that, Wakelock never asks again.
 
 Remove everything (app, login item, sudoers rule, boot daemon, support files, prefs) with `scripts/uninstall.sh`.
 
@@ -31,7 +32,7 @@ Every 5 s the app reads back `pmset -g`, corrects any drift, and shows the **obs
 - **launch** (unconditionally), **quit**, logout, and `SIGTERM`/`SIGINT`/`SIGHUP`;
 - **crashes** — fatal signals and uncaught exceptions spawn the reset before the process dies;
 - **`SIGKILL` / Force Quit** — a detached watchdog (`sh` loop) notices the app is gone and resets;
-- **kernel panic / power loss** — a LaunchDaemon installed by `setup-sudoers.sh` resets at boot.
+- **kernel panic / power loss** — a LaunchDaemon installed during setup resets at boot.
 
 Every `sudo`/`pmset` call is killed after 10 s, so a hung call can't hold up a safety reset.
 
@@ -69,10 +70,10 @@ WL="$HOME/Library/Application Support/Wakelock/bin/wakelockctl"
 Merge [`hooks/claude-settings.example.json`](hooks/claude-settings.example.json) into `~/.claude/settings.json`:
 
 - `UserPromptSubmit` → acquire `claude-<session_id>`
-- `PreToolUse` → renew it before every tool call
-- `Stop` / `SessionEnd` → release
+- `PreToolUse` / `PostToolUse` → renew it around every tool call
+- `Stop` / `SessionEnd` → release immediately, so the Mac can sleep as soon as Claude finishes
 
-The default TTL is 7200 s (`WAKELOCK_CLAUDE_TTL`): it has to outlast your longest single tool call, and it's also how long an interrupted session keeps the Mac awake. You can drop a stuck lease from the menu. The hook never writes to stdout, always exits 0, and does nothing if the payload has no `session_id`.
+The default TTL is 900 s (`WAKELOCK_CLAUDE_TTL`). It only matters when `Stop` never fires (e.g. you interrupt Claude): that's how long the Mac stays awake afterwards. It also has to outlast your longest single tool call, so raise it if you run builds longer than 15 minutes. You can drop a stuck lease from the menu. The hook never writes to stdout, always exits 0, and does nothing if the payload has no `session_id`.
 
 ## Development
 

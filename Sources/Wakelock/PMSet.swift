@@ -11,7 +11,7 @@ enum PMSet {
     static let pmset = "/usr/bin/pmset"
 
     /// Runs exactly `sudo -n /usr/bin/pmset -a disablesleep 0|1` — the only two
-    /// commands the sudoers rule from scripts/setup-sudoers.sh permits.
+    /// commands the sudoers rule from Support/root-setup.sh permits.
     /// Returns nil on success, otherwise an error message.
     @discardableResult
     static func setDisableSleep(_ on: Bool) -> String? {
@@ -19,7 +19,7 @@ enum PMSet {
         if r.status == 0 { return nil }
         let detail = r.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         if detail.contains("password is required") {
-            return "sudo needs a password — run scripts/setup-sudoers.sh"
+            return "Lid-closed mode isn't set up yet"
         }
         return "pmset disablesleep \(on ? 1 : 0) failed: \(detail.isEmpty ? "exit \(r.status)" : detail)"
     }
@@ -50,6 +50,23 @@ enum PMSet {
         let e = err.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
         return (p.terminationStatus, String(decoding: o, as: UTF8.self), String(decoding: e, as: UTF8.self))
+    }
+
+    static var sudoersInstalled: Bool { FileManager.default.fileExists(atPath: "/etc/sudoers.d/wakelock") }
+
+    /// Runs the bundled root-setup.sh through the standard macOS admin prompt
+    /// (Touch ID or password). Returns nil on success or cancel, else an error.
+    static func runRootSetup(script: String) -> String? {
+        let r = run("/usr/bin/osascript", [
+            "-e", "on run argv",
+            "-e", "do shell script \"/bin/bash \" & quoted form of (item 1 of argv) & \" \" & quoted form of (item 2 of argv) "
+                + "with prompt \"Wakelock needs one-time permission to keep your Mac awake with the lid closed.\" "
+                + "with administrator privileges",
+            "-e", "end run",
+            script, NSUserName(),
+        ], timeout: 600)  // the user may take a while at the prompt
+        if r.status == 0 || r.stderr.contains("-128") { return nil }  // -128: user cancelled
+        return "Setup failed: \(r.stderr.trimmingCharacters(in: .whitespacesAndNewlines))"
     }
 
     /// Puts the Mac to sleep now. Needs no root.
@@ -127,6 +144,11 @@ final class PMSetWorker {
         // While disabling is wanted and unconfirmed, keep showing why the last attempt failed.
         let error = job.desired ? (rb.sleepDisabled == true ? nil : enableError) : disableError
         DispatchQueue.main.async { MainActor.assumeIsolated { job.completion(rb, error) } }
+    }
+
+    /// Retry disabling sleep right away (e.g. after setup), not after the 60s back-off.
+    func clearEnableThrottle() {
+        queue.async { self.lastFailedEnable = nil }
     }
 
     /// Synchronous reset used on launch and quit; runs after any queued work.

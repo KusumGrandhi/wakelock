@@ -12,6 +12,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Wakelock"
 cp "$ROOT/Support/Info.plist" "$APP/Contents/Info.plist"
+install -m 0755 "$ROOT/Support/root-setup.sh" "$APP/Contents/Resources/root-setup.sh"
 codesign --force --sign - "$APP"
 
 echo "Built $APP"

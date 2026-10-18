@@ -72,7 +72,19 @@ struct MenuView: View {
             }
             .font(.caption)
 
-            ForEach([c.pmsetError, c.loginItemError, c.socketError].compactMap { $0 }, id: \.self) { error in
+            if c.needsSetup {
+                HStack {
+                    Label("Lid-closed mode needs a one-time admin approval", systemImage: "lock.fill")
+                        .font(.caption).fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Button(c.setupInProgress ? "Waiting…" : "Set Up…") { c.runSetup() }
+                        .disabled(c.setupInProgress)
+                }
+            }
+
+            // While setup is pending, the "not set up" pmset error just repeats the row above.
+            ForEach([c.needsSetup ? nil : c.pmsetError, c.loginItemError, c.socketError].compactMap { $0 },
+                    id: \.self) { error in
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)

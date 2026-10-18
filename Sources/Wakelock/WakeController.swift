@@ -58,6 +58,8 @@ final class WakeController: ObservableObject {
     @Published private(set) var pmsetError: String?
     @Published private(set) var loginItemError: String?
     @Published var socketError: String?
+    @Published private(set) var sudoersInstalled = PMSet.sudoersInstalled
+    @Published private(set) var setupInProgress = false
     @Published private(set) var battery = BatteryInfo(percent: nil, onBatteryPower: false)
     @Published private(set) var lidClosed: Bool?
     @Published private(set) var now = Date()
@@ -65,6 +67,9 @@ final class WakeController: ObservableObject {
     var assertionHeld: Bool { assertion.isHeld }
     /// Only Macs with a lid need disablesleep; desktops get by on the assertion.
     var wantDisableSleep: Bool { wantAwake && closedLidEnabled && lidClosed != nil }
+    /// Lid-closed mode is wanted on this Mac but the one-time root setup hasn't run.
+    var needsSetup: Bool { closedLidEnabled && lidClosed != nil && !sudoersInstalled }
+
     /// Wanted awake but the system isn't actually protected (e.g. no sudoers rule,
     /// so closing the lid would still sleep the Mac).
     var isDegraded: Bool {
@@ -131,6 +136,27 @@ final class WakeController: ObservableObject {
         tick()
     }
 
+    /// One admin prompt (Touch ID or password) installs the sudoers rule; never asked again.
+    func runSetup() {
+        guard !setupInProgress else { return }
+        guard let script = Bundle.main.path(forResource: "root-setup", ofType: "sh") else {
+            pmsetError = "Setup script missing from the app bundle — reinstall with scripts/install.sh"
+            return
+        }
+        setupInProgress = true
+        DispatchQueue.global().async {
+            let error = PMSet.runRootSetup(script: script)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self.setupInProgress = false
+                    self.pmsetError = error
+                    self.pmWorker.clearEnableThrottle()
+                    self.tick()
+                }
+            }
+        }
+    }
+
     func setLaunchAtLogin(_ on: Bool) {
         loginItemError = nil
         do {
@@ -151,6 +177,7 @@ final class WakeController: ObservableObject {
         leases.expire(now: now)
         battery = SystemProbe.battery()
         lidClosed = SystemProbe.lidClosed()
+        sudoersInstalled = PMSet.sudoersInstalled
         blockReason = SafetyPolicy.blockReason(SafetyInputs(
             batteryPercent: battery.percent,
             onBatteryPower: battery.onBatteryPower,
@@ -220,7 +247,7 @@ final class WakeController: ObservableObject {
         guard wantAwake else { return "Off" }
         if isDegraded {
             return wantDisableSleep && readback.sleepDisabled != true
-                ? "Awake with lid open only — lid-closed setup failed"
+                ? "Awake — lid open only"
                 : "Not protected — power assertion failed"
         }
         var parts: [String] = []
